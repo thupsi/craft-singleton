@@ -352,7 +352,10 @@ class Plugin extends BasePlugin
         }
 
         // Only show the field for existing single sections.
-        $sectionId = Craft::$app->getRequest()->getParam('sectionId');
+        // sectionId comes from the URL pattern settings/sections/<sectionId:\d+>
+        // — read the last URL segment since route params aren't exposed via getParam().
+        $segments = Craft::$app->getRequest()->getSegments();
+        $sectionId = end($segments);
         if (!$sectionId) {
             return;
         }
@@ -372,6 +375,8 @@ class Plugin extends BasePlugin
         /** @var Settings $settings */
         $settings = $this->getSettings();
         $hideRightSidebar = in_array($section->uid, $settings->hideSidebarSections, true);
+
+        // Wrap the existing contentHtml closure to append our field.
 
         // Wrap the existing contentHtml closure to append our field.
         $originalContent = $behavior->contentHtml;
