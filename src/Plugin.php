@@ -12,12 +12,10 @@ use craft\elements\Entry;
 use craft\events\RegisterCpNavItemsEvent;
 use craft\events\RegisterElementSourcesEvent;
 use craft\events\RegisterUrlRulesEvent;
-use craft\events\SectionEvent;
 use craft\helpers\ArrayHelper;
 use craft\helpers\StringHelper;
 use craft\helpers\UrlHelper;
 use craft\models\Section;
-use craft\services\Entries;
 use craft\web\CpScreenResponseBehavior;
 use craft\web\twig\variables\Cp as CpVariable;
 use craft\web\UrlManager;
@@ -48,6 +46,9 @@ class Plugin extends BasePlugin
             $this->_expandSingles($event);
         });
 
+        // After a section is saved, persist any singles-manager POST params.
+        // Handled via SectionsController::EVENT_AFTER_ACTION below.
+
         if (!Craft::$app->getRequest()->getIsCpRequest()) {
             return;
         }
@@ -77,17 +78,14 @@ class Plugin extends BasePlugin
         });
 
         // Inject a "Hide right sidebar" lightswitch into the native section
-        // edit form (only shown for single sections).
+        // edit form (only shown for single sections), and persist the setting
+        // when the form is saved (both handled here since we know this event fires).
         Event::on(SectionsController::class, Controller::EVENT_AFTER_ACTION, function (ActionEvent $e) {
-            if ($e->action->id !== 'edit-section') {
-                return;
+            if ($e->action->id === 'edit-section') {
+                $this->_injectSectionSettingsField($e);
+            } elseif ($e->action->id === 'save-section') {
+                $this->_handleSaveSectionAction();
             }
-            $this->_injectSectionSettingsField($e);
-        });
-
-        // After a section is saved, persist any singles-manager POST params.
-        Event::on(Entries::class, Entries::EVENT_AFTER_SAVE_SECTION, function (SectionEvent $e) {
-            $this->_saveSectionSettings($e->section);
         });
     }
 
@@ -205,12 +203,20 @@ class Plugin extends BasePlugin
         $currentSectionUid = $section->uid;
         $currentSiteId = $element->siteId;
 
-        // Hide the right-hand meta sidebar if this section is listed in the
-        // plugin settings' hideSidebarSections array.
+        // Hide the right-hand meta sidebar if this section is listed in the plugin settings.
+        // metaSidebarHtml is set INSIDE the prepareScreen closure (by _prepareEditor), which
+        // runs after EVENT_AFTER_ACTION. So we wrap prepareScreen to clear metaSidebarHtml
+        // after the original closure runs.
         /** @var Settings $settings */
         $settings = $this->getSettings();
         if (in_array($section->uid, $settings->hideSidebarSections, true)) {
-            $behavior->metaSidebarHtml = '';
+            $originalPrepareScreen = $behavior->prepareScreen;
+            $behavior->prepareScreen = function ($response, $containerId) use ($originalPrepareScreen) {
+                if ($originalPrepareScreen) {
+                    ($originalPrepareScreen)($response, $containerId);
+                }
+                $response->getBehavior(CpScreenResponseBehavior::NAME)->metaSidebarHtml = '';
+            };
         }
 
         // Fix the breadcrumb: Section::getPage() looks for the 'singles' source key
@@ -393,18 +399,20 @@ class Plugin extends BasePlugin
 
     /**
      * Persist the singles-manager section settings posted from the section
-     * edit form into the plugin's settings.
+     * edit form. Called via SectionsController EVENT_AFTER_ACTION for save-section.
      */
-    private function _saveSectionSettings(Section $section): void
+    private function _handleSaveSectionAction(): void
     {
-        if ($section->type !== Section::TYPE_SINGLE) {
+        $request = Craft::$app->getRequest();
+        $sectionId = $request->getBodyParam('sectionId');
+        $smParams = $request->getBodyParam('singlesManager');
+
+        if (!$sectionId || $smParams === null) {
             return;
         }
 
-        $request = Craft::$app->getRequest();
-        $smParams = $request->getBodyParam('singlesManager');
-        if ($smParams === null) {
-            // Not posted from our form (e.g. programmatic save) — leave as-is.
+        $section = Craft::$app->getEntries()->getSectionById((int)$sectionId);
+        if (!$section || $section->type !== Section::TYPE_SINGLE) {
             return;
         }
 
