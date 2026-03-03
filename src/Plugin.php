@@ -352,7 +352,7 @@ class Plugin extends BasePlugin
         }
 
         // Only show the field for existing single sections.
-        $sectionId = $e->params['sectionId'] ?? null;
+        $sectionId = Craft::$app->getRequest()->getParam('sectionId');
         if (!$sectionId) {
             return;
         }
