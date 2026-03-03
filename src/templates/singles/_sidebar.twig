@@ -1,0 +1,90 @@
+{#
+ # Left-hand page sidebar injected into the standard Craft element editor
+ # when a single entry is being edited.
+ #
+ # Variables (passed from Module::_injectSinglesSidebar):
+ #   sidebarSources    – ordered sources array from ElementSources::getSources()
+ #   sectionUrlMap     – sectionUid → cpUrl map
+ #   editableSingleSections – handle → Section, for the 'singles' key fallback
+ #   pages             – list of page names (Craft 5.9+, may be empty)
+ #   currentPage       – name of the page the current single belongs to
+ #   currentSectionUid – UID of the section being edited (for active highlight)
+ #}
+
+{# Hide the sidebar container on narrower viewports where four columns
+   (global nav + this sidebar + editor + details) would be too cramped. #}
+<style>
+@media only screen and (max-width: 79.9375rem) {
+    #sidebar-container { display: none !important; }
+}
+</style>
+
+{# Multi-page navigation (Craft 5.9+) #}
+{% if pages|length > 1 %}
+    <nav id="singles-manager-page-nav">
+        <ul>
+            {% for page in pages %}
+                <li>
+                    <a{% if page == currentPage %} class="sel"{% endif %}
+                       href="{{ cpUrl('content/' ~ page|kebab) }}">
+                        {{ page|t('site') }}
+                    </a>
+                </li>
+            {% endfor %}
+        </ul>
+    </nav>
+{% endif %}
+
+<nav>
+    <ul>
+        {% for source in sidebarSources %}
+
+            {% if source.type == 'heading' %}
+                {% if source.heading ?? '' %}
+                    <li class="heading"><span>{{ source.heading|t('site') }}</span></li>
+                {% else %}
+                    <li class="heading"></li>
+                {% endif %}
+
+            {% elseif (source.key ?? '') starts with 'single:' %}
+                {% set uid = source.key|split(':')|last %}
+                {% set url = sectionUrlMap[uid] ?? null %}
+                {% if url %}
+                    <li>
+                        <a{% if uid == currentSectionUid %} class="sel"{% endif %}
+                           href="{{ url }}">
+                            {{ source.label|t('site') }}
+                        </a>
+                    </li>
+                {% endif %}
+
+            {% elseif (source.key ?? '') == 'singles' %}
+                {# Fallback: custom config still uses the old grouped 'singles' key.
+                   Expand inline so singles are still individually accessible. #}
+                <li class="heading"><span>{{ 'Singles'|t('app') }}</span></li>
+                {% for handle, s in editableSingleSections %}
+                    {% set url = sectionUrlMap[s.uid] ?? null %}
+                    {% if url %}
+                        <li>
+                            <a{% if s.uid == currentSectionUid %} class="sel"{% endif %}
+                               href="{{ url }}">
+                                {{ s.name|t('site') }}
+                            </a>
+                        </li>
+                    {% endif %}
+                {% endfor %}
+
+            {% elseif (source.key ?? '') starts with 'section:' %}
+                {% set uid = source.key|split(':')|last %}
+                {% set url = sectionUrlMap[uid] ?? null %}
+                {% if url %}
+                    <li>
+                        <a href="{{ url }}">{{ source.label|t('site') }}</a>
+                    </li>
+                {% endif %}
+
+            {% endif %}
+
+        {% endfor %}
+    </ul>
+</nav>
