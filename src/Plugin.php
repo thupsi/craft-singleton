@@ -4,6 +4,7 @@ namespace thupsi\singlesmanager;
 
 use Craft;
 use craft\base\Element;
+use craft\base\Model;
 use craft\base\Plugin as BasePlugin;
 use craft\controllers\ElementsController;
 use craft\controllers\SectionsController;
@@ -20,6 +21,7 @@ use craft\web\twig\variables\Cp as CpVariable;
 use craft\web\UrlManager;
 use craft\web\View;
 use thupsi\singlesmanager\assetbundles\SinglesManagerAsset;
+use thupsi\singlesmanager\models\Settings;
 use yii\base\ActionEvent;
 use yii\base\Controller;
 use yii\base\Event;
@@ -85,6 +87,13 @@ class Plugin extends BasePlugin
                 $this->_handleSaveSectionAction();
             }
         });
+    }
+
+    // -------------------------------------------------------------------------
+
+    protected function createSettingsModel(): ?Model
+    {
+        return new Settings();
     }
 
     // -------------------------------------------------------------------------
@@ -198,7 +207,7 @@ class Plugin extends BasePlugin
         // metaSidebarHtml is set INSIDE the prepareScreen closure (by _prepareEditor), which
         // runs after EVENT_AFTER_ACTION. So we wrap prepareScreen to clear metaSidebarHtml
         // after the original closure runs.
-        $hidden = Craft::$app->getProjectConfig()->get('singlesManager.hideSidebarSections') ?? [];
+        $hidden = ($this->getSettings())->hideSidebarSections;
         if (in_array($section->uid, $hidden, true)) {
             $originalPrepareScreen = $behavior->prepareScreen;
             $behavior->prepareScreen = function ($response, $containerId) use ($originalPrepareScreen) {
@@ -368,7 +377,7 @@ class Plugin extends BasePlugin
             return;
         }
 
-        $hidden = Craft::$app->getProjectConfig()->get('singlesManager.hideSidebarSections') ?? [];
+        $hidden = ($this->getSettings())->hideSidebarSections;
         $hideRightSidebar = in_array($section->uid, $hidden, true);
 
         // Wrap the existing contentHtml closure to append our field.
@@ -403,7 +412,7 @@ class Plugin extends BasePlugin
             return;
         }
 
-        $hidden = Craft::$app->getProjectConfig()->get('singlesManager.hideSidebarSections') ?? [];
+        $hidden = ($this->getSettings())->hideSidebarSections;
 
         $shouldHide = !empty($smParams['hideRightSidebar']);
 
@@ -413,7 +422,10 @@ class Plugin extends BasePlugin
             $hidden = array_values(array_filter($hidden, fn($uid) => $uid !== $section->uid));
         }
 
-        Craft::$app->getProjectConfig()->set('singlesManager.hideSidebarSections', $hidden);
+        /** @var Settings $settings */
+        $settings = $this->getSettings();
+        $settings->hideSidebarSections = $hidden;
+        Craft::$app->getPlugins()->savePluginSettings($this, $settings->toArray());
     }
 
     /**
