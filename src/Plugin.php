@@ -4,21 +4,26 @@ namespace thupsi\singlesmanager;
 
 use Craft;
 use craft\base\Element;
+use craft\base\Model;
 use craft\base\Plugin as BasePlugin;
 use craft\controllers\ElementsController;
+use craft\controllers\SectionsController;
 use craft\elements\Entry;
 use craft\events\RegisterCpNavItemsEvent;
 use craft\events\RegisterElementSourcesEvent;
 use craft\events\RegisterUrlRulesEvent;
+use craft\events\SectionEvent;
 use craft\helpers\ArrayHelper;
 use craft\helpers\StringHelper;
 use craft\helpers\UrlHelper;
 use craft\models\Section;
+use craft\services\Entries;
 use craft\web\CpScreenResponseBehavior;
 use craft\web\twig\variables\Cp as CpVariable;
 use craft\web\UrlManager;
 use craft\web\View;
 use thupsi\singlesmanager\assetbundles\SinglesManagerAsset;
+use thupsi\singlesmanager\models\Settings;
 use yii\base\ActionEvent;
 use yii\base\Controller;
 use yii\base\Event;
@@ -70,6 +75,27 @@ class Plugin extends BasePlugin
         Event::on(CpVariable::class, CpVariable::EVENT_REGISTER_CP_NAV_ITEMS, function (RegisterCpNavItemsEvent $e) {
             $this->_fixNavLinks($e);
         });
+
+        // Inject a "Hide right sidebar" lightswitch into the native section
+        // edit form (only shown for single sections).
+        Event::on(SectionsController::class, Controller::EVENT_AFTER_ACTION, function (ActionEvent $e) {
+            if ($e->action->id !== 'edit-section') {
+                return;
+            }
+            $this->_injectSectionSettingsField($e);
+        });
+
+        // After a section is saved, persist any singles-manager POST params.
+        Event::on(Entries::class, Entries::EVENT_AFTER_SAVE_SECTION, function (SectionEvent $e) {
+            $this->_saveSectionSettings($e->section);
+        });
+    }
+
+    // -------------------------------------------------------------------------
+
+    protected function createSettingsModel(): ?Model
+    {
+        return new Settings();
     }
 
     // -------------------------------------------------------------------------
@@ -179,14 +205,11 @@ class Plugin extends BasePlugin
         $currentSectionUid = $section->uid;
         $currentSiteId = $element->siteId;
 
-        // Hide the right-hand meta sidebar if this section is listed in
-        // the plugin config's `hideSidebarSections` array (handles or UIDs).
-        $pluginConfig = Craft::$app->getConfig()->getConfigFromFile('singles-manager');
-        $hideSidebarSections = (array)($pluginConfig['hideSidebarSections'] ?? []);
-        if (!empty($hideSidebarSections) && (
-            in_array($section->handle, $hideSidebarSections, true) ||
-            in_array($section->uid, $hideSidebarSections, true)
-        )) {
+        // Hide the right-hand meta sidebar if this section is listed in the
+        // plugin settings' hideSidebarSections array.
+        /** @var Settings $settings */
+        $settings = $this->getSettings();
+        if (in_array($section->uid, $settings->hideSidebarSections, true)) {
             $behavior->metaSidebarHtml = '';
         }
 
@@ -316,6 +339,84 @@ class Plugin extends BasePlugin
                 View::TEMPLATE_MODE_CP
             );
         };
+    }
+
+    /**
+     * Inject a "Hide right sidebar" lightswitch into the native section edit
+     * form. Fires after SectionsController::actionEditSection().
+     */
+    private function _injectSectionSettingsField(ActionEvent $e): void
+    {
+        if (Craft::$app->getRequest()->getAcceptsJson()) {
+            return;
+        }
+
+        // Only show the field for existing single sections.
+        $sectionId = $e->params['sectionId'] ?? null;
+        if (!$sectionId) {
+            return;
+        }
+
+        $section = Craft::$app->getEntries()->getSectionById((int)$sectionId);
+        if (!$section || $section->type !== Section::TYPE_SINGLE) {
+            return;
+        }
+
+        $response = Craft::$app->getResponse();
+        /** @var CpScreenResponseBehavior|null $behavior */
+        $behavior = $response->getBehavior(CpScreenResponseBehavior::NAME);
+        if (!$behavior) {
+            return;
+        }
+
+        /** @var Settings $settings */
+        $settings = $this->getSettings();
+        $hideRightSidebar = in_array($section->uid, $settings->hideSidebarSections, true);
+
+        // Wrap the existing contentHtml closure to append our field.
+        $originalContent = $behavior->contentHtml;
+        $behavior->contentHtml = function () use ($originalContent, $hideRightSidebar) {
+            $html = is_callable($originalContent) ? ($originalContent)() : ($originalContent ?? '');
+            $html .= Craft::$app->getView()->renderTemplate(
+                '_singles-manager/settings/_section-field',
+                ['hideRightSidebar' => $hideRightSidebar],
+                View::TEMPLATE_MODE_CP,
+            );
+            return $html;
+        };
+    }
+
+    /**
+     * Persist the singles-manager section settings posted from the section
+     * edit form into the plugin's settings.
+     */
+    private function _saveSectionSettings(Section $section): void
+    {
+        if ($section->type !== Section::TYPE_SINGLE) {
+            return;
+        }
+
+        $request = Craft::$app->getRequest();
+        $smParams = $request->getBodyParam('singlesManager');
+        if ($smParams === null) {
+            // Not posted from our form (e.g. programmatic save) — leave as-is.
+            return;
+        }
+
+        /** @var Settings $settings */
+        $settings = $this->getSettings();
+        $hidden = $settings->hideSidebarSections;
+
+        $shouldHide = !empty($smParams['hideRightSidebar']);
+
+        if ($shouldHide && !in_array($section->uid, $hidden, true)) {
+            $hidden[] = $section->uid;
+        } elseif (!$shouldHide) {
+            $hidden = array_values(array_filter($hidden, fn($uid) => $uid !== $section->uid));
+        }
+
+        $settings->hideSidebarSections = $hidden;
+        Craft::$app->getPlugins()->savePluginSettings($this, $settings->toArray());
     }
 
     /**

@@ -61,15 +61,10 @@ Or go to **Settings → Plugins** in the control panel and install it from there
 
 ## Configuration
 
-Copy `vendor/thupsi/craft-singles-manager/src/config/singles-manager.php` to your project's `config/` directory and adjust:
+### Hide right sidebar (per section)
 
-```php
-<?php
-return [
-    // Section handles (or UIDs) whose single entry edit form should have the
-    // right-hand meta sidebar hidden. Useful for "settings"-style singles.
-    'hideSidebarSections' => ['generalSettings', 'seoSettings'],
-];
-```
+On any single section's settings page (**Settings → Sections → [section name]**), a **"Hide right sidebar"** toggle is available at the bottom of the form. Enabling it hides the right-hand meta panel (slug, post date, authors, etc.) when editing that single — useful for settings/SEO-style pages where the metadata is irrelevant.
+
+The setting is stored in the plugin's database settings and requires no file editing.
 
 The injected left sidebar is hidden on viewports narrower than **1280px** to avoid a four-column layout on smaller screens.

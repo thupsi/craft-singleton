@@ -1,0 +1,14 @@
+{% import '_includes/forms.twig' as forms %}
+
+<hr>
+
+<div id="singles-manager-settings">
+    {{ forms.lightswitchField({
+        label: 'Hide right sidebar' | t('singles-manager'),
+        instructions: 'When editing this single, hide the right-hand meta sidebar (slug, dates, authors).' | t('singles-manager'),
+        id: 'singlesManagerHideRightSidebar',
+        name: 'singlesManager[hideRightSidebar]',
+        on: hideRightSidebar,
+        toggle: null
+    }) }}
+</div>
