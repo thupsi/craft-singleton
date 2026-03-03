@@ -7,6 +7,7 @@ use craft\base\Element;
 use craft\base\Plugin as BasePlugin;
 use craft\controllers\ElementsController;
 use craft\elements\Entry;
+use craft\events\RegisterCpNavItemsEvent;
 use craft\events\RegisterElementSourcesEvent;
 use craft\events\RegisterUrlRulesEvent;
 use craft\helpers\ArrayHelper;
@@ -14,6 +15,7 @@ use craft\helpers\StringHelper;
 use craft\helpers\UrlHelper;
 use craft\models\Section;
 use craft\web\CpScreenResponseBehavior;
+use craft\web\twig\variables\Cp as CpVariable;
 use craft\web\UrlManager;
 use craft\web\View;
 use thupsi\singlesmanager\assetbundles\SinglesManagerAsset;
@@ -62,6 +64,12 @@ class Plugin extends BasePlugin
             }
             $this->_injectSinglesSidebar($e);
         });
+
+        // Rewrite CP nav URLs for pages that contain only a single section so
+        // clicking the nav item goes directly to that single's edit form.
+        Event::on(CpVariable::class, CpVariable::EVENT_REGISTER_CP_NAV_ITEMS, function (RegisterCpNavItemsEvent $e) {
+            $this->_fixNavLinks($e);
+        });
     }
 
     // -------------------------------------------------------------------------
@@ -84,8 +92,10 @@ class Plugin extends BasePlugin
 
         $singleSections = Craft::$app->getEntries()->getSectionsByType(Section::TYPE_SINGLE);
 
-        // Fetch entries for the current site so we can give each source its
-        // direct edit URL (used by the JS redirect).
+        // Read the page for each single directly from project config. We CANNOT
+        // use Section::getPage() here because we are inside EVENT_REGISTER_SOURCES;
+        // getPage() calls findSource() which calls getSources() which would try to
+        // rebuild sources recursively, giving wrong results.
         $currentSiteId = Craft::$app->getSites()->getCurrentSite()->id;
         $singleEntries = Entry::find()
             ->sectionId(ArrayHelper::getColumn($singleSections, 'id'))
@@ -94,10 +104,6 @@ class Plugin extends BasePlugin
             ->indexBy('sectionId')
             ->all();
 
-        // Read the page for each single directly from project config. We CANNOT
-        // use Section::getPage() here because we are inside EVENT_REGISTER_SOURCES;
-        // getPage() calls findSource() which calls getSources() which would try to
-        // rebuild sources recursively, giving wrong results.
         $pageByUid = [];
         $sourceConfigs = Craft::$app->getProjectConfig()->get('elementSources.' . Entry::class) ?? [];
         foreach ($sourceConfigs as $src) {
@@ -114,7 +120,6 @@ class Plugin extends BasePlugin
 
             $entry = $singleEntries[$section->id] ?? null;
 
-            // Build the CP edit URL directly so we don't depend on Section::getPage().
             if ($entry) {
                 $page = $pageByUid[$section->uid] ?? null;
                 $pagePath = $page ? StringHelper::toKebabCase($page) : 'entries';
@@ -242,6 +247,13 @@ class Plugin extends BasePlugin
                 $sidebarSources = $allSources;
             }
 
+            // If there's only one non-heading source on this page, the sidebar
+            // is redundant — skip rendering it entirely.
+            $nonHeadingCount = count(array_filter($sidebarSources, fn($s) => ($s['type'] ?? '') !== 'heading'));
+            if ($nonHeadingCount <= 1) {
+                return null;
+            }
+
             // Build uid → URL map for all editable sections.
             // For singles: compute URL from project config (same approach as _expandSingles,
             // to avoid Section::getPage() issues). For channels/structures: use getCpIndexUri().
@@ -293,5 +305,110 @@ class Plugin extends BasePlugin
                 View::TEMPLATE_MODE_CP
             );
         };
+    }
+
+    /**
+     * Rewrite CP nav item URLs for any page that contains only one source and
+     * that source is a single entry. Instead of linking to the element index,
+     * the nav item links directly to the single's edit form.
+     */
+    private function _fixNavLinks(RegisterCpNavItemsEvent $e): void
+    {
+        $elementSourcesService = Craft::$app->getElementSources();
+        $allSources = $elementSourcesService->getSources(Entry::class);
+        $pages = $elementSourcesService->getPages(Entry::class);
+
+        if (empty($pages)) {
+            return;
+        }
+
+        // Read page → single URL map from project config (avoids Section::getPage() recursion).
+        $pageByUid = [];
+        $sourceConfigs = Craft::$app->getProjectConfig()->get('elementSources.' . Entry::class) ?? [];
+        foreach ($sourceConfigs as $src) {
+            $key = $src['key'] ?? '';
+            if (str_starts_with($key, 'single:')) {
+                $pageByUid[substr($key, 7)] = $src['page'] ?? null;
+            }
+        }
+
+        // For each page, check if ALL non-heading sources are singles.
+        // If so, rewrite the nav URL to go directly to the first single's edit form
+        // (analogous to how /globals links straight to the first global set).
+        foreach ($pages as $page) {
+            $pageNameId = $elementSourcesService->pageNameId($page);
+            $pageSources = array_values(array_filter(
+                $allSources,
+                fn($src) => isset($src['page']) &&
+                    $elementSourcesService->pageNameId($src['page']) === $pageNameId,
+            ));
+
+            $nonHeadings = array_values(array_filter($pageSources, fn($s) => ($s['type'] ?? '') !== 'heading'));
+            if (empty($nonHeadings)) {
+                continue;
+            }
+
+            // Skip this page if it contains any non-single source (channel, structure, custom).
+            $allAreSingles = array_reduce($nonHeadings, fn(bool $carry, array $s) =>
+                $carry && str_starts_with($s['key'] ?? '', 'single:'), true);
+            if (!$allAreSingles) {
+                continue;
+            }
+
+            // Link to the first single on this page.
+            $firstUid = substr($nonHeadings[0]['key'], 7);
+            $singleUrl = $this->_buildSingleUrl($firstUid);
+            if (!$singleUrl) {
+                continue;
+            }
+
+            // Find the nav item for this page and rewrite its URL.
+            $pageSlug = StringHelper::toKebabCase($page);
+            foreach ($e->navItems as &$item) {
+                if (($item['url'] ?? '') === "content/$pageSlug") {
+                    $item['url'] = $singleUrl;
+                    break;
+                }
+            }
+            unset($item);
+        }
+    }
+
+    /**
+     * Build a single entry's CP edit URL using project config page data,
+     * avoiding Section::getPage() which would cause recursive source rebuilds.
+     */
+    private function _buildSingleUrl(string $sectionUid): ?string
+    {
+        $section = null;
+        foreach (Craft::$app->getEntries()->getSectionsByType(Section::TYPE_SINGLE) as $s) {
+            if ($s->uid === $sectionUid) {
+                $section = $s;
+                break;
+            }
+        }
+
+        if (!$section) {
+            return null;
+        }
+
+        $currentSiteId = Craft::$app->getSites()->getCurrentSite()->id;
+        $entry = Entry::find()->sectionId($section->id)->siteId($currentSiteId)->status(null)->one();
+        if (!$entry) {
+            return null;
+        }
+
+        $sourceConfigs = Craft::$app->getProjectConfig()->get('elementSources.' . Entry::class) ?? [];
+        $page = null;
+        foreach ($sourceConfigs as $src) {
+            if (($src['key'] ?? '') === 'single:' . $sectionUid) {
+                $page = $src['page'] ?? null;
+                break;
+            }
+        }
+
+        $pagePath = $page ? StringHelper::toKebabCase($page) : 'entries';
+        $slug = $entry->slug && !str_starts_with($entry->slug, '__') ? '-' . str_replace('/', '-', $entry->slug) : '';
+        return UrlHelper::cpUrl("content/{$pagePath}/singles/{$entry->id}{$slug}");
     }
 }
