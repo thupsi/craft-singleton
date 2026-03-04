@@ -18,10 +18,6 @@ Clicking a single in the sources sidebar opens the entry editor with a persisten
 
 Main nav items that lead to a page containing a single as their first source link directly to that single's edit form, skipping the element index entirely.
 
-### Correct breadcrumbs
-
-Breadcrumbs always reflect the correct CP page name rather than the generic "Entries" fallback that Craft produces when individual `single:{uid}` source keys are in use.
-
 ### Auto-hide sources sidebar
 
 When a page has only one source, the sources sidebar is hidden automatically — there is nothing useful to show. The "Customize Sources" button remains accessible.
@@ -34,9 +30,9 @@ An icon button in the injected left sidebar opens the native **Customize Sources
 
 A toggle on each single section's settings page hides the right-hand metadata panel (slug, post date, authors, etc.) when editing that single. Useful for settings or SEO-style pages where the metadata fields are irrelevant.
 
-### Fallback breadcrumb source for disabled singles
+### Fallback breadcrumb source for disabled sources
 
-When a single's source is disabled in the element sources config (e.g. it is grouped inside a custom source), you can assign a **fallback breadcrumb source**. The breadcrumb will then show the correct page and, when the page has multiple sources, the custom source label — instead of the generic "Entries" fallback.
+When any section's source is disabled in the element sources config (e.g. it is grouped inside a custom source), you can assign a **fallback breadcrumb source**. The breadcrumb will then show the correct page and, when the page has multiple sources, the custom source label — instead of the generic "Entries" fallback. The setting has no effect when the section's source is enabled.
 
 ### Smart post-save redirect
 
@@ -120,13 +116,13 @@ All settings are stored in project config under `plugins._singles-manager.settin
 
 ### Hide right sidebar
 
-On any single section's settings page (or via the section settings slideout on an entry), enable **"Hide right sidebar"** to remove the right-hand metadata panel for that section.
+On any section's settings page (or via the section settings slideout on an entry), enable **"Hide right sidebar"** to remove the right-hand metadata panel for that section.
 
 ### Fallback breadcrumb source
 
-On the same settings form, use the **"Fallback breadcrumb source"** dropdown to choose any enabled source. This takes effect when the section's own source is disabled, ensuring the breadcrumb points to a meaningful location rather than the generic "Entries" page. The dropdown is pre-grouped by page for easy navigation.
+On the same settings form, use the **"Fallback breadcrumb source"** dropdown to choose any enabled source. This applies to **all section types** (singles, channels, structures) and takes effect only when the section's own source is disabled — ensuring the breadcrumb points to a meaningful location rather than the generic "Entries" page. The dropdown is pre-grouped by page for easy navigation.
 
 ### Disabled sources
 
-If a single should be navigated to via a custom CP nav link or custom source rather than the built-in sources sidebar, mark its source as **disabled** in **Settings → Sources**. The plugin detects this and skips sidebar injection. Configure a fallback breadcrumb source to keep breadcrumbs accurate.
+If a section should be navigated to via a custom CP nav link or custom source rather than the built-in sources sidebar, mark its source as **disabled** in **Settings → Sources**. For singles, the plugin also skips sidebar injection. Configure a fallback breadcrumb source to keep breadcrumbs accurate.
 

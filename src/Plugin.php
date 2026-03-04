@@ -203,15 +203,20 @@ class Plugin extends BasePlugin
         }
 
         $section = $element->getSection();
-        if (!$section || $section->type !== Section::TYPE_SINGLE) {
+        if (!$section) {
             return;
         }
 
-        // Check whether the source for this single is disabled in element sources config.
+        // Determine the source key for this section.
+        $sectionSourceKey = $section->type === Section::TYPE_SINGLE
+            ? 'single:' . $section->uid
+            : 'section:' . $section->uid;
+
+        // Check whether the source for this section is disabled in element sources config.
         $sourceConfigs = Craft::$app->getProjectConfig()->get('elementSources.' . Entry::class) ?? [];
         $sourceDisabled = false;
         foreach ($sourceConfigs as $src) {
-            if (($src['key'] ?? null) === 'single:' . $section->uid) {
+            if (($src['key'] ?? null) === $sectionSourceKey) {
                 $sourceDisabled = !empty($src['disabled']);
                 break;
             }
@@ -329,6 +334,11 @@ class Plugin extends BasePlugin
                 $behavior->redirectUrl = '{cpEditUrl}';
             }
 
+            return;
+        }
+
+        // Sidebar injection and breadcrumb fix below are only for singles.
+        if ($section->type !== Section::TYPE_SINGLE) {
             return;
         }
 
@@ -497,7 +507,6 @@ class Plugin extends BasePlugin
      */
     private function _injectSectionSettingsField(ActionEvent $e): void
     {
-        // Only show the field for existing single sections.
         // When accessed via CP route (settings/sections/<id>), sectionId is a route
         // param. When opened as a slideout, it's passed as a query param. Both are
         // accessible via getParam().
@@ -508,7 +517,7 @@ class Plugin extends BasePlugin
         }
 
         $section = Craft::$app->getEntries()->getSectionById((int)$sectionId);
-        if (!$section || $section->type !== Section::TYPE_SINGLE) {
+        if (!$section) {
             return;
         }
 
@@ -525,6 +534,11 @@ class Plugin extends BasePlugin
         $breadcrumbSourceKeys = ($this->getSettings())->breadcrumbSourceKeys;
         $currentBreadcrumbSourceKey = $breadcrumbSourceKeys[$section->uid] ?? null;
 
+        // The source key for this section (used to exclude it from the dropdown).
+        $ownSourceKey = $section->type === Section::TYPE_SINGLE
+            ? 'single:' . $section->uid
+            : 'section:' . $section->uid;
+
         // Collect all non-heading, non-disabled sources as options for the breadcrumb dropdown.
         $allSources = Craft::$app->getElementSources()->getSources(Entry::class, withDisabled: true);
         $breadcrumbSourceOptions = [['label' => '—', 'value' => '']];
@@ -532,7 +546,7 @@ class Plugin extends BasePlugin
             if (($src['type'] ?? '') === 'heading' || !empty($src['disabled'])) {
                 continue;
             }
-            if (($src['key'] ?? '') === 'single:' . $section->uid) {
+            if (($src['key'] ?? '') === $ownSourceKey) {
                 continue;
             }
             $page = $src['page'] ?? null;
@@ -580,7 +594,7 @@ class Plugin extends BasePlugin
         }
 
         $section = Craft::$app->getEntries()->getSectionById((int)$sectionId);
-        if (!$section || $section->type !== Section::TYPE_SINGLE) {
+        if (!$section) {
             return;
         }
 
