@@ -1,5 +1,7 @@
 # Singles Manager
 
+> **Disclaimer:** This plugin was built with the assistance of [Claude](https://claude.ai) (Anthropic) and is provided as a prototype/proof of concept. It is offered as-is, without warranty of any kind. The author accepts no liability for any data loss, site breakage, or other issues arising from its use. That said, the plugin only modifies control panel behaviour — it does not read, write, or touch user content or the database.
+
 A private Craft CMS 5 plugin that improves the control panel experience for single sections (also adds some bonus features for all section types and index pages).
 
 ---
