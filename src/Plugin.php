@@ -77,6 +77,16 @@ class Plugin extends BasePlugin
             $this->_fixNavLinks($e);
         });
 
+        // On element index pages, hide the sources sidebar when there is only
+        // one (non-heading) source — it would just show a single item with no value.
+        Craft::$app->getView()->hook('cp.layouts.elementindex', function (array &$context): void {
+            $sources = $context['sources'] ?? [];
+            $nonHeadings = array_filter($sources, fn($s) => ($s['type'] ?? '') !== 'heading');
+            if (count($nonHeadings) <= 1) {
+                Craft::$app->getView()->registerCss('#sidebar-container { display: none !important; }');
+            }
+        });
+
         // Inject a "Hide right sidebar" lightswitch into the native section
         // edit form (only shown for single sections), and persist the setting
         // when the form is saved (both handled here since we know this event fires).
