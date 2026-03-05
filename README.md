@@ -54,7 +54,7 @@ After saving a single:
 ### With DDEV (one command)
 
 ```bash
-ddev composer require thupsi/craft-singleton:^0.4.0 && ddev craft plugin/install _singles-manager
+ddev composer require thupsi/craft-singleton && ddev craft plugin/install _singles-manager
 ```
 
 ### Manual
@@ -81,7 +81,7 @@ composer config --global github-oauth.github.com <your-token>
 #### 2. Require the plugin
 
 ```bash
-composer require thupsi/craft-singleton:^0.4.0
+composer require thupsi/craft-singleton
 ```
 
 #### 3. Install in Craft
